@@ -1,0 +1,104 @@
+{
+  "rows": [
+    {
+      "drift_type": "vocabulary",
+      "method": "centroid_z",
+      "time_to_alert": 3,
+      "tp_in_horizon": 48,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.96,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "intent",
+      "method": "centroid_z",
+      "time_to_alert": 3,
+      "tp_in_horizon": 48,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.96,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "length",
+      "method": "centroid_z",
+      "time_to_alert": 3,
+      "tp_in_horizon": 48,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.96,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "vocabulary",
+      "method": "ks_cosine",
+      "time_to_alert": 4,
+      "tp_in_horizon": 47,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.94,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "intent",
+      "method": "ks_cosine",
+      "time_to_alert": 4,
+      "tp_in_horizon": 47,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.94,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "length",
+      "method": "ks_cosine",
+      "time_to_alert": 4,
+      "tp_in_horizon": 47,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.94,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "vocabulary",
+      "method": "mmd",
+      "time_to_alert": 10,
+      "tp_in_horizon": 41,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.82,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "intent",
+      "method": "mmd",
+      "time_to_alert": 13,
+      "tp_in_horizon": 38,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.76,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    },
+    {
+      "drift_type": "length",
+      "method": "mmd",
+      "time_to_alert": 7,
+      "tp_in_horizon": 44,
+      "horizon": 50,
+      "true_positive_rate_in_horizon": 0.88,
+      "false_positive_first": null,
+      "false_positives_in_horizon": 0,
+      "false_positive_rate_in_horizon": 0.0
+    }
+  ],
+  "horizon": 50
+}
