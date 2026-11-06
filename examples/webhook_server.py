@@ -47,8 +47,6 @@ _last_report: DriftReport | None = None
 
 
 def _fire_webhook(report: DriftReport) -> None:
-    global _last_report
-    _last_report = report
     if not _webhook_url:
         return
     payload = {
@@ -97,9 +95,11 @@ def reset() -> dict[str, Any]:
 
 @app.post("/observe")
 def observe(req: ObserveRequest) -> dict[str, Any]:
+    global _last_report
     report = _watch.observe(req.text)
     if report is None:
         return {"phase": "baseline", "n_baseline": _watch.n_baseline}
+    _last_report = report
     return {
         "phase": "monitoring",
         "drift_detected": report.drift_detected,
