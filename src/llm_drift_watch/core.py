@@ -7,7 +7,8 @@ Two states:
   until ``seal_baseline()`` is called.
 * **monitoring** — every ``observe`` appends to a rolling recent window, and
   triggers a detector check. When the detector flags drift, the report has
-  ``drift_detected=True`` and optional callbacks fire.
+  ``drift_detected=True`` and the optional ``on_drift`` callback fires once
+  per drift episode.
 
 To reduce flapping on individual outliers, ``min_consecutive`` requires N
 consecutive flagged windows before the public report is marked drifted.
@@ -75,7 +76,12 @@ class DriftWatch:
     check_every:
         Run the detector every Nth observation (default 1 = every call).
     on_drift:
-        Optional callback ``(report) -> None`` fired when drift is detected.
+        Optional callback ``(report) -> None`` fired when drift is confirmed.
+        It fires once per drift episode; a check that comes back clean ends
+        the episode and re-arms it.
+    alert_cooldown:
+        Fire ``on_drift`` again every N checks while drift stays confirmed.
+        ``None`` (default) never repeats within an episode.
     """
 
     def __init__(
@@ -88,6 +94,7 @@ class DriftWatch:
         min_consecutive: int = 3,
         check_every: int = 1,
         on_drift: Callable[[DriftReport], None] | None = None,
+        alert_cooldown: int | None = None,
     ) -> None:
         self.embedder: Embedder = (
             embedder
@@ -105,6 +112,7 @@ class DriftWatch:
         self.min_consecutive = min_consecutive
         self.check_every = max(1, check_every)
         self.on_drift = on_drift
+        self.alert_cooldown = alert_cooldown
 
         self._sealed = False
         self._baseline_emb: list[np.ndarray] = []
@@ -113,6 +121,7 @@ class DriftWatch:
         self._recent_text: deque[str] = deque(maxlen=window_size)
         self._consecutive_flags = 0
         self._n_since_check = 0
+        self._checks_since_alert: int | None = None
 
     # ------------------------------------------------------------------
     # public API
@@ -137,6 +146,7 @@ class DriftWatch:
         self._sealed = True
         self._consecutive_flags = 0
         self._n_since_check = 0
+        self._checks_since_alert = None
 
     def reset(self, *, keep_baseline: bool = True) -> None:
         """Reset the recent window and consecutive-flag counter."""
@@ -144,6 +154,7 @@ class DriftWatch:
         self._recent_text.clear()
         self._consecutive_flags = 0
         self._n_since_check = 0
+        self._checks_since_alert = None
         if not keep_baseline:
             self._baseline_emb = []
             self._baseline_text = []
@@ -194,8 +205,16 @@ class DriftWatch:
             sample_text=text,
             details=det_result.details,
         )
-        if confirmed and self.on_drift is not None:
-            self.on_drift(report)
+        if not confirmed:
+            self._checks_since_alert = None
+        else:
+            since = self._checks_since_alert
+            if since is None or (self.alert_cooldown is not None and since + 1 >= self.alert_cooldown):
+                self._checks_since_alert = 0
+                if self.on_drift is not None:
+                    self.on_drift(report)
+            else:
+                self._checks_since_alert = since + 1
         return report
 
     def observe_many(self, texts: Iterable[str]) -> list[DriftReport | None]:
