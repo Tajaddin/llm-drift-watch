@@ -1,12 +1,12 @@
 # llm-drift-watch
 
-> Embedding-based drift detector for LLM input/output streams. Statistical tests on rolling windows, webhook alerts, Streamlit dashboard. Detects three different drift types (vocabulary, intent, length) in **3 observations** on a synthetic benchmark — 17× under the 50-call budget.
+> Embedding-based drift detector for LLM input/output streams. Statistical tests on rolling windows, webhook alerts, Streamlit dashboard. On a synthetic benchmark the default detector confirms three drift types (vocabulary, intent, length) at the **3rd drifted observation**. That is the floor `min_consecutive=3` allows, so the benchmark is saturated: it shows the detector is at least that fast, not how much faster it could be.
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-27%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## Hero numbers
 
-Synthetic benchmark: 200-text cooking baseline, then 50 drifted observations of three different types, plus a 50-text in-distribution control stream for FPR. Hash-based embedder (zero-dep, deterministic).
+Synthetic benchmark: 200-text cooking baseline, then 50 drifted observations of three different types, plus a 50-text in-distribution control stream for FPR. Hash-based embedder (zero-dep, deterministic), `window_size=20`, `min_consecutive=3`.
 
 | Detector | Drift type | Time-to-alert | TPR (n=50) | **FPR (n=50)** |
 |---|---|---:|---:|---:|
@@ -20,7 +20,7 @@ Synthetic benchmark: 200-text cooking baseline, then 50 drifted observations of 
 | mmd | intent | 13 | 76% | 0% |
 | mmd | length | 7 | 88% | 0% |
 
-Target was ≤ 50 observations to first alert. The default `centroid_z` detector clears that by **17×** while staying at 0% false-positive rate on an i.i.d. in-distribution control stream. Raw results in [`bench/drift_results.json`](bench/drift_results.json).
+Target was ≤ 50 observations to first alert. With `min_consecutive=3`, no detector can alert before the 3rd drifted observation or confirm more than 48 of 50 (96%), so `centroid_z`'s 3 and 96% on all three streams are that floor and ceiling: every one of its checks flagged drift. The 0% FPR is measured on a control stream built from the same 10 templates × 30 dishes as the baseline, which makes it an easy control. Raw results in [`bench/drift_results.json`](bench/drift_results.json).
 
 Reproduce: `python bench/drift_benchmark.py`.
 
@@ -161,7 +161,7 @@ Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-
 
 **MMD is slower and less sensitive in this benchmark.** Counterintuitive but real — when drift is *primarily lexical* (as in this benchmark's three streams), the 1D cosine-distance summary used by `centroid_z` and `ks_cosine` is more discriminative than the multivariate MMD over the same embeddings. MMD shines when drift is geometric in the latent space without a clean centroid shift; switch to it when `centroid_z` misses a known drift.
 
-**Time-to-alert is window-dependent.** Smaller `window_size` reacts faster but is noisier. The defaults (`window=50`, `min_consecutive=3`) trade ~3 observation lag for 0% FPR in the benchmark. Tune for your domain.
+**Time-to-alert is window-dependent.** Smaller `window_size` reacts faster but is noisier. `min_consecutive=3` rules out an alert before the 3rd drifted observation; the benchmark (`window=20`, `min_consecutive=3`) saw 0% FPR at that setting. Tune for your domain.
 
 **Drift detection ≠ root cause.** The library tells you the distribution changed. It does not tell you *why*. The recent window samples are returned in each `DriftReport.sample_text` and the full recent buffer is accessible via `watch._recent_text` for triage.
 
