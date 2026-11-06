@@ -2,7 +2,7 @@
 
 > Embedding-based drift detector for LLM input/output streams. Statistical tests on rolling windows, webhook alerts, Streamlit dashboard. On a synthetic benchmark where drift arrives into a window already full of normal traffic, the default `centroid_z` detector confirms vocabulary and intent drift after **11 and 12 drifted observations** and length drift after 22; `ks_cosine` confirms all three after **9**. No false alerts on the in-distribution control stream.
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-27%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-29%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## Hero numbers
 
@@ -122,7 +122,7 @@ streamlit run examples/dashboard.py
 | `check_every` | Run detector every Nth observation | 1 |
 | `baseline_size` | Soft cap on baseline length; oldest roll off if exceeded | 500 |
 | `on_drift` | Callback fired once when drift is confirmed; a clean check ends the episode and re-arms it | `None` |
-| `alert_cooldown` | Re-fire `on_drift` every N checks while drift stays confirmed (`None` = once per episode) | `None` |
+| `realert_every` | Re-fire `on_drift` every N checks while drift stays confirmed (`None` = once per episode) | `None` |
 
 Custom detector? Implement `DetectionMethod.run(baseline, recent) -> DetectorResult` and pass an instance to `DriftWatch(method=...)`.
 
@@ -134,10 +134,10 @@ pytest -q
 ```
 
 ```
-27 passed
+29 passed
 ```
 
-Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-seal, sealed, reset), callback firing (once per drift episode, cooldown, re-arm on reset), throttling via `check_every`, embedder protocol, edge cases (empty baseline, single observation).
+Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-seal, sealed, reset), callback firing (once per drift episode, `realert_every`, re-arm on reset), throttling via `check_every`, embedder protocol, edge cases (empty baseline, single observation).
 
 ## Project layout
 
@@ -148,7 +148,7 @@ Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-
 │   ├── core.py          # DriftWatch state machine
 │   ├── detectors.py     # CentroidZ, KSCosine, MMDDetector
 │   └── embedders.py     # FastEmbedEmbedder, HashEmbedder
-├── tests/               # 27 pytest cases
+├── tests/               # 29 pytest cases
 ├── bench/
 │   ├── drift_benchmark.py  # 3 drift types × 3 detectors, empty and full window
 │   └── drift_results.json

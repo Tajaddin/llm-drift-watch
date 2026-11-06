@@ -137,10 +137,16 @@ def test_on_drift_fires_once_per_drift_episode() -> None:
     assert events[1] is reports[5]
 
 
-def test_alert_cooldown_repeats_alert_while_drift_persists() -> None:
-    w, events = _sealed_watch([True] * 6, alert_cooldown=2)
+def test_realert_every_repeats_alert_while_drift_persists() -> None:
+    w, events = _sealed_watch([True] * 6, realert_every=2)
     reports = [w.observe("x") for _ in range(6)]
     assert events == [reports[0], reports[2], reports[4]]
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_realert_every_must_be_positive(bad: int) -> None:
+    with pytest.raises(ValueError, match="realert_every"):
+        DriftWatch(embedder=HashEmbedder(dim=64), realert_every=bad)
 
 
 def test_reset_rearms_on_drift() -> None:

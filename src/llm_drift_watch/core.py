@@ -79,9 +79,10 @@ class DriftWatch:
         Optional callback ``(report) -> None`` fired when drift is confirmed.
         It fires once per drift episode; a check that comes back clean ends
         the episode and re-arms it.
-    alert_cooldown:
+    realert_every:
         Fire ``on_drift`` again every N checks while drift stays confirmed.
-        ``None`` (default) never repeats within an episode.
+        ``None`` (default) never repeats within an episode. This is not a
+        cooldown: a new episode alerts at once however recent the last alert.
     """
 
     def __init__(
@@ -94,8 +95,10 @@ class DriftWatch:
         min_consecutive: int = 3,
         check_every: int = 1,
         on_drift: Callable[[DriftReport], None] | None = None,
-        alert_cooldown: int | None = None,
+        realert_every: int | None = None,
     ) -> None:
+        if realert_every is not None and realert_every < 1:
+            raise ValueError(f"realert_every must be >= 1 or None, got {realert_every}")
         self.embedder: Embedder = (
             embedder
             if isinstance(embedder, Embedder)
@@ -112,7 +115,7 @@ class DriftWatch:
         self.min_consecutive = min_consecutive
         self.check_every = max(1, check_every)
         self.on_drift = on_drift
-        self.alert_cooldown = alert_cooldown
+        self.realert_every = realert_every
 
         self._sealed = False
         self._baseline_emb: list[np.ndarray] = []
@@ -209,7 +212,7 @@ class DriftWatch:
             self._checks_since_alert = None
         else:
             since = self._checks_since_alert
-            if since is None or (self.alert_cooldown is not None and since + 1 >= self.alert_cooldown):
+            if since is None or (self.realert_every is not None and since + 1 >= self.realert_every):
                 self._checks_since_alert = 0
                 if self.on_drift is not None:
                     self.on_drift(report)
