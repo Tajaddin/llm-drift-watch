@@ -15,6 +15,12 @@ Three drift types are tested:
 2. **intent** — switch domain entirely (cybersecurity questions)
 3. **length** — same domain but bulky multi-paragraph prompts instead of one-liners
 
+Each detector and drift type runs twice: once with the drift stream starting
+right after ``seal_baseline()`` (empty recent window, so every check sees only
+drifted texts), and once after ``WINDOW_SIZE`` control texts have filled the
+window (``warmup``), which is how drift reaches a monitor in production.
+``time_to_alert`` counts drifted observations in both cases.
+
 Outputs ``bench/drift_results.json`` and a markdown table the README links to.
 """
 
@@ -142,6 +148,8 @@ def control_corpus(n: int = 50) -> list[str]:
 # Runner
 # ---------------------------------------------------------------------------
 
+WINDOW_SIZE = 20
+
 
 def run_one(
     label: str,
@@ -149,12 +157,17 @@ def run_one(
     method_name: str,
     *,
     baseline_n: int = 200,
-    window_size: int = 20,
+    window_size: int = WINDOW_SIZE,
     min_consecutive: int = 3,
     z_threshold: float = 3.0,
     p_threshold: float = 0.01,
     alert_horizon: int = 50,
+    warmup: int = 0,
 ) -> dict:
+    """``warmup`` control texts are observed after sealing and before either
+    stream, so the recent window holds in-distribution traffic when drift
+    starts. With ``warmup=0`` the window is all drift from the first check.
+    """
     if method_name == "centroid_z":
         method = CentroidZ(z_threshold=z_threshold)
     elif method_name == "ks_cosine":
@@ -174,6 +187,9 @@ def run_one(
     for t in baseline_corpus(baseline_n):
         watcher.observe(t)
     watcher.seal_baseline()
+
+    fill = control_corpus(warmup)
+    alerts_during_warmup = sum(bool(r and r.drift_detected) for r in watcher.observe_many(fill))
 
     time_to_alert = None
     tp_in_horizon = 0
@@ -195,9 +211,12 @@ def run_one(
     for t in baseline_corpus(baseline_n):
         watcher_ctrl.observe(t)
     watcher_ctrl.seal_baseline()
+    alerts_during_warmup += sum(
+        bool(r and r.drift_detected) for r in watcher_ctrl.observe_many(fill)
+    )
     fp_in_horizon = 0
     fp_first = None
-    for i, t in enumerate(control_corpus(alert_horizon)):
+    for i, t in enumerate(control_corpus(warmup + alert_horizon)[warmup:]):
         r = watcher_ctrl.observe(t)
         if r and r.drift_detected:
             if fp_first is None:
@@ -207,6 +226,8 @@ def run_one(
     return {
         "drift_type": label,
         "method": method_name,
+        "warmup": warmup,
+        "alerts_during_warmup": alerts_during_warmup,
         "time_to_alert": time_to_alert,
         "tp_in_horizon": tp_in_horizon,
         "horizon": alert_horizon,
@@ -235,17 +256,20 @@ def main() -> int:
     methods = ["centroid_z", "ks_cosine", "mmd"]
 
     rows: list[dict] = []
-    for method in methods:
-        for label, texts in drift_streams.items():
-            row = run_one(label, texts, method, alert_horizon=args.horizon)
-            rows.append(row)
-            tta = row["time_to_alert"]
-            tta_str = f"{tta}" if tta is not None else ">{}".format(args.horizon)
-            print(
-                f"method={method:10s} drift={label:10s} time_to_alert={tta_str:6s} "
-                f"tpr={row['true_positive_rate_in_horizon']:.2f} "
-                f"fpr={row['false_positive_rate_in_horizon']:.2f}"
-            )
+    for warmup in (0, WINDOW_SIZE):
+        for method in methods:
+            for label, texts in drift_streams.items():
+                row = run_one(label, texts, method, alert_horizon=args.horizon, warmup=warmup)
+                rows.append(row)
+                tta = row["time_to_alert"]
+                tta_str = f"{tta}" if tta is not None else ">{}".format(args.horizon)
+                print(
+                    f"warmup={warmup:<3d} method={method:10s} drift={label:10s} "
+                    f"time_to_alert={tta_str:6s} "
+                    f"tpr={row['true_positive_rate_in_horizon']:.2f} "
+                    f"fpr={row['false_positive_rate_in_horizon']:.2f} "
+                    f"warmup_alerts={row['alerts_during_warmup']}"
+                )
 
     out = {"rows": rows, "horizon": args.horizon}
     Path(args.out).write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -253,13 +277,13 @@ def main() -> int:
 
     # Quick markdown table.
     print("\nMarkdown table:")
-    print("| Detector | Drift type | Time-to-alert | TPR @ horizon | FPR @ horizon |")
-    print("|---|---|---:|---:|---:|")
+    print("| Warmup | Detector | Drift type | Time-to-alert | TPR @ horizon | FPR @ horizon |")
+    print("|---:|---|---|---:|---:|---:|")
     for r in rows:
         tta = r["time_to_alert"]
         tta_cell = str(tta) if tta is not None else f">{args.horizon}"
         print(
-            f"| {r['method']} | {r['drift_type']} | {tta_cell} | "
+            f"| {r['warmup']} | {r['method']} | {r['drift_type']} | {tta_cell} | "
             f"{r['true_positive_rate_in_horizon']:.2f} | "
             f"{r['false_positive_rate_in_horizon']:.2f} |"
         )

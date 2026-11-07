@@ -2,9 +2,39 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 
-from llm_drift_watch import DriftWatch, HashEmbedder
+from llm_drift_watch import DetectorResult, DriftWatch, HashEmbedder
+
+
+@dataclass
+class _ScriptedDetector:
+    """Returns the next scripted verdict on each check."""
+
+    flags: list[bool]
+    name: str = "scripted"
+
+    def run(self, baseline, recent) -> DetectorResult:
+        return DetectorResult(
+            drift_detected=self.flags.pop(0), score=0.0, p_value=None, method=self.name
+        )
+
+
+def _sealed_watch(flags: list[bool], **kwargs) -> tuple[DriftWatch, list]:
+    events: list = []
+    w = DriftWatch(
+        embedder=HashEmbedder(dim=64),
+        method=_ScriptedDetector(flags),
+        window_size=5,
+        min_consecutive=1,
+        on_drift=events.append,
+        **kwargs,
+    )
+    w.observe("baseline")
+    w.seal_baseline()
+    return w, events
 
 
 def test_observe_pre_seal_returns_none() -> None:
@@ -93,6 +123,38 @@ def test_on_drift_callback_fires() -> None:
         w.observe("security exploit payload")
     assert len(events) >= 1
     assert events[0].drift_detected
+
+
+def test_on_drift_fires_once_per_drift_episode() -> None:
+    flags = [True, True, True, True, False, True, True]
+    w, events = _sealed_watch(list(flags))
+    reports = [w.observe("x") for _ in flags]
+    assert [r.drift_detected for r in reports] == flags
+    # One alert when drift is confirmed, none while it persists, one more
+    # after a clean check ends the episode and drift comes back.
+    assert len(events) == 2
+    assert events[0] is reports[0]
+    assert events[1] is reports[5]
+
+
+def test_realert_every_repeats_alert_while_drift_persists() -> None:
+    w, events = _sealed_watch([True] * 6, realert_every=2)
+    reports = [w.observe("x") for _ in range(6)]
+    assert events == [reports[0], reports[2], reports[4]]
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_realert_every_must_be_positive(bad: int) -> None:
+    with pytest.raises(ValueError, match="realert_every"):
+        DriftWatch(embedder=HashEmbedder(dim=64), realert_every=bad)
+
+
+def test_reset_rearms_on_drift() -> None:
+    w, events = _sealed_watch([True, True])
+    w.observe("x")
+    w.reset()
+    w.observe("x")
+    assert len(events) == 2
 
 
 def test_reset_clears_recent_but_keeps_baseline() -> None:

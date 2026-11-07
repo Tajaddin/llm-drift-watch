@@ -1,26 +1,28 @@
 # llm-drift-watch
 
-> Embedding-based drift detector for LLM input/output streams. Statistical tests on rolling windows, webhook alerts, Streamlit dashboard. Detects three different drift types (vocabulary, intent, length) in **3 observations** on a synthetic benchmark — 17× under the 50-call budget.
+> Embedding-based drift detector for LLM input/output streams. Statistical tests on rolling windows, webhook alerts, Streamlit dashboard. On a synthetic benchmark where drift arrives into a window already full of normal traffic, the default `centroid_z` detector confirms vocabulary and intent drift after **11 and 12 drifted observations** and length drift after 22; `ks_cosine` confirms all three after **9**. No false alerts on the in-distribution control stream.
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-24%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Tests](https://img.shields.io/badge/tests-29%20passing-brightgreen)](#tests) [![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()
 
 ## Hero numbers
 
-Synthetic benchmark: 200-text cooking baseline, then 50 drifted observations of three different types, plus a 50-text in-distribution control stream for FPR. Hash-based embedder (zero-dep, deterministic).
+Synthetic benchmark: 200-text cooking baseline, then 50 drifted observations of three different types, plus a 50-text in-distribution control stream for FPR. Hash-based embedder (zero-dep, deterministic), `window_size=20`, `min_consecutive=3`.
 
-| Detector | Drift type | Time-to-alert | TPR (n=50) | **FPR (n=50)** |
-|---|---|---:|---:|---:|
-| **centroid_z** | vocabulary (Spanish recipes) | **3** | 96% | **0%** |
-| **centroid_z** | intent (cybersecurity) | **3** | 96% | **0%** |
-| **centroid_z** | length (verbose prompts) | **3** | 96% | **0%** |
-| ks_cosine | vocabulary | 4 | 94% | 0% |
-| ks_cosine | intent | 4 | 94% | 0% |
-| ks_cosine | length | 4 | 94% | 0% |
-| mmd | vocabulary | 10 | 82% | 0% |
-| mmd | intent | 13 | 76% | 0% |
-| mmd | length | 7 | 88% | 0% |
+| Detector | Drift type | Time-to-alert, full window | TPR (n=50) | Time-to-alert, empty window | TPR (n=50) |
+|---|---|---:|---:|---:|---:|
+| centroid_z (default) | vocabulary (Spanish recipes) | 11 | 80% | 3 | 96% |
+| centroid_z | intent (cybersecurity) | 12 | 78% | 3 | 96% |
+| centroid_z | length (verbose prompts) | 22 | 58% | 3 | 96% |
+| ks_cosine | vocabulary | 9 | 84% | 4 | 94% |
+| ks_cosine | intent | 9 | 84% | 4 | 94% |
+| ks_cosine | length | 9 | 84% | 4 | 94% |
+| mmd | vocabulary | 16 | 70% | 10 | 82% |
+| mmd | intent | 17 | 68% | 13 | 76% |
+| mmd | length | 9 | 84% | 7 | 88% |
 
-Target was ≤ 50 observations to first alert. The default `centroid_z` detector clears that by **17×** while staying at 0% false-positive rate on an i.i.d. in-distribution control stream. Raw results in [`bench/drift_results.json`](bench/drift_results.json).
+**Full window** is the realistic case: after sealing, 20 in-distribution control texts fill the recent window, then the drift stream starts, so drifted texts have to displace normal ones before a check flags. No detector alerted during the fill. **Empty window** starts the drift stream right after `seal_baseline()`, so every check sees only drifted texts. There `min_consecutive=3` sets the floor (no alert before the 3rd drifted observation, at most 48 of 50 confirmed), and `centroid_z` sits on it, which says nothing about how fast it is on real traffic.
+
+Target was ≤ 50 observations to first alert; every run met it. FPR was 0% in every run (n=50), measured on control texts built from the same 10 templates × 30 dishes as the baseline, which makes it an easy control. Raw results in [`bench/drift_results.json`](bench/drift_results.json).
 
 Reproduce: `python bench/drift_benchmark.py`.
 
@@ -119,7 +121,8 @@ streamlit run examples/dashboard.py
 | `min_consecutive` | Require N consecutive flagged checks before reporting drift | 3 |
 | `check_every` | Run detector every Nth observation | 1 |
 | `baseline_size` | Soft cap on baseline length; oldest roll off if exceeded | 500 |
-| `on_drift` | Callback fired when drift is confirmed | `None` |
+| `on_drift` | Callback fired once when drift is confirmed; a clean check ends the episode and re-arms it | `None` |
+| `realert_every` | Re-fire `on_drift` every N checks while drift stays confirmed (`None` = once per episode) | `None` |
 
 Custom detector? Implement `DetectionMethod.run(baseline, recent) -> DetectorResult` and pass an instance to `DriftWatch(method=...)`.
 
@@ -131,10 +134,10 @@ pytest -q
 ```
 
 ```
-24 passed
+29 passed
 ```
 
-Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-seal, sealed, reset), callback firing, throttling via `check_every`, embedder protocol, edge cases (empty baseline, single observation).
+Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-seal, sealed, reset), callback firing (once per drift episode, `realert_every`, re-arm on reset), throttling via `check_every`, embedder protocol, edge cases (empty baseline, single observation).
 
 ## Project layout
 
@@ -145,9 +148,9 @@ Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-
 │   ├── core.py          # DriftWatch state machine
 │   ├── detectors.py     # CentroidZ, KSCosine, MMDDetector
 │   └── embedders.py     # FastEmbedEmbedder, HashEmbedder
-├── tests/               # 24 pytest cases
+├── tests/               # 29 pytest cases
 ├── bench/
-│   ├── drift_benchmark.py  # 3 drift types × 3 detectors
+│   ├── drift_benchmark.py  # 3 drift types × 3 detectors, empty and full window
 │   └── drift_results.json
 └── examples/
     ├── webhook_server.py   # FastAPI alert webhook
@@ -158,9 +161,9 @@ Covers detector math on synthetic cluster shifts, DriftWatch state machine (pre-
 
 **Hash embedder is a stand-in.** The bundled `HashEmbedder` is fast, deterministic, and zero-dep — perfect for tests and structural drift (vocab, charset, length). It is **not** a semantic embedding. Two paraphrases of the same sentence will land in different regions of the vector space. For production monitoring, use `FastEmbedEmbedder` (default when `fastembed` is installed) or plug in any OpenAI / Cohere / sentence-transformers backend.
 
-**MMD is slower and less sensitive in this benchmark.** Counterintuitive but real — when drift is *primarily lexical* (as in this benchmark's three streams), the 1D cosine-distance summary used by `centroid_z` and `ks_cosine` is more discriminative than the multivariate MMD over the same embeddings. MMD shines when drift is geometric in the latent space without a clean centroid shift; switch to it when `centroid_z` misses a known drift.
+**MMD is slower and, on vocabulary and intent drift, less sensitive in this benchmark.** When drift is *primarily lexical* (as in this benchmark's three streams), the 1D cosine-distance summary used by `centroid_z` and `ks_cosine` caught it sooner than the multivariate MMD over the same embeddings. The exception is length drift with a full window, where MMD (9 observations) tied `ks_cosine` and beat `centroid_z` (22). MMD shines when drift is geometric in the latent space without a clean centroid shift; switch to it when `centroid_z` misses a known drift.
 
-**Time-to-alert is window-dependent.** Smaller `window_size` reacts faster but is noisier. The defaults (`window=50`, `min_consecutive=3`) trade ~3 observation lag for 0% FPR in the benchmark. Tune for your domain.
+**Time-to-alert is window-dependent.** Smaller `window_size` reacts faster but is noisier. `min_consecutive=3` rules out an alert before the 3rd drifted observation; the benchmark (`window=20`, `min_consecutive=3`) saw 0% FPR at that setting, and with a window already full of normal traffic its alerts came after 9 to 22 drifted observations. Tune for your domain.
 
 **Drift detection ≠ root cause.** The library tells you the distribution changed. It does not tell you *why*. The recent window samples are returned in each `DriftReport.sample_text` and the full recent buffer is accessible via `watch._recent_text` for triage.
 
